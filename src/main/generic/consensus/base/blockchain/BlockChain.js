@@ -154,10 +154,11 @@ class BlockChain {
     }
 
     /**
+     * @param {Hash} [hash]
      * @returns {Promise.<boolean>}
      */
-    async isAnchored() {
-        return Block.GENESIS.HASH.equals(await this.tail.hash());
+    async isAnchored(hash = Block.GENESIS.HASH) {
+        return hash.equals(await this.tail.hash());
     }
 
     /**

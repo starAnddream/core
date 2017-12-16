@@ -406,13 +406,21 @@ class FullChain extends BaseChain {
 
     /**
      * @returns {Promise.<ChainProof>}
-     * @override
      */
     async getChainProof() {
         if (!this._proof) {
             this._proof = await this._getChainProof();
         }
         return this._proof;
+    }
+
+    /**
+     * @param {Block} block
+     * @returns {Promise.<?ChainProof>}
+     */
+    async getInfixProof(block) {
+        const proof = await this.getChainProof();
+        return this._getInfixProof(block, proof);
     }
 
     /**
@@ -454,6 +462,7 @@ class FullChain extends BaseChain {
                 matches.push(transaction);
             }
         }
+
         const proof = await MerkleProof.compute([block.minerAddr, block.body.extraData, ...block.transactions], matches);
         return new TransactionsProof(matches, proof);
     }

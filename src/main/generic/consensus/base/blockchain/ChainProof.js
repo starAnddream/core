@@ -35,11 +35,12 @@ class ChainProof {
     }
 
     /**
+     * @param {Hash} [anchorHash]
      * @returns {Promise.<boolean>}
      */
-    async verify() {
+    async verify(anchorHash = Block.GENESIS.HASH) {
         // Check that the prefix chain is anchored.
-        if (!this._prefix.isAnchored()) {
+        if (!(await this._prefix.isAnchored(anchorHash))) {
             return false;
         }
 

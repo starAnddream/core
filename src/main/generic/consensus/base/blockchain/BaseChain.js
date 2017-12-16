@@ -297,33 +297,34 @@ class BaseChain extends IBlockchain {
                 continue;
             }
 
-            if (BaseChain._isGoodSuperChain(superchain, i, Policy.M, Policy.DELTA)) {
-                // Remove all blocks in lower chains up to (including) superchain[-m].
-                const referenceBlock = superchain.blocks[superchain.length - Policy.M];
-                for (let j = i - 1; j >= 0; j--) {
-                    let numBlocksToDelete = 0;
-                    let candidateBlock = chains[j].blocks[numBlocksToDelete];
-                    while (candidateBlock.height <= referenceBlock.height) {
-                        const candidateTarget = BlockUtils.hashToTarget(await candidateBlock.pow());
-                        const candidateDepth = BlockUtils.getTargetDepth(candidateTarget);
-                        if (candidateDepth === j && candidateBlock.height > 1) {
-                            deletedBlockHeights.add(candidateBlock.height);
-                        }
-
-                        numBlocksToDelete++;
-                        candidateBlock = chains[j].blocks[numBlocksToDelete];
-                    }
-
-                    if (numBlocksToDelete > 0) {
-                        // Don't modify the chain, create a copy.
-                        chains[j] = new BlockChain(chains[j].blocks.slice(numBlocksToDelete));
-                    }
-                }
-            } else {
+            if (!BaseChain._isGoodSuperChain(superchain, i, Policy.M, Policy.DELTA)) {
                 Log.w(BaseChain, `Chain quality badness detected at depth ${i}`);
                 // TODO extend superchains at lower levels
                 if (failOnBadness) {
                     return null;
+                }
+                continue;
+            }
+
+            // Remove all blocks in lower chains up to (including) superchain[-m].
+            const referenceBlock = superchain.blocks[superchain.length - Policy.M];
+            for (let j = i - 1; j >= 0; j--) {
+                let numBlocksToDelete = 0;
+                let candidateBlock = chains[j].blocks[numBlocksToDelete];
+                while (candidateBlock.height <= referenceBlock.height) {
+                    const candidateTarget = BlockUtils.hashToTarget(await candidateBlock.pow());
+                    const candidateDepth = BlockUtils.getTargetDepth(candidateTarget);
+                    if (candidateDepth === j && candidateBlock.height > 1) {
+                        deletedBlockHeights.add(candidateBlock.height);
+                    }
+
+                    numBlocksToDelete++;
+                    candidateBlock = chains[j].blocks[numBlocksToDelete];
+                }
+
+                if (numBlocksToDelete > 0) {
+                    // Don't modify the chain, create a copy.
+                    chains[j] = new BlockChain(chains[j].blocks.slice(numBlocksToDelete));
                 }
             }
         }
@@ -333,6 +334,125 @@ class BaseChain extends IBlockchain {
 
         // Return the extended proof.
         return new ChainProof(newPrefix, new HeaderChain(suffix), chains);
+    }
+
+    /**
+     * @param {Block} blockToProve
+     * @param {ChainProof} [proof]
+     * @returns {Promise.<?ChainProof>}
+     * @protected
+     */
+    async _getInfixProof(blockToProve, proof) {
+        proof = proof || await this._getChainProof();
+        const hashToProve = await blockToProve.hash();
+
+        // Check whether the blockToProve is (potentially) part of the proof suffix.
+        if (blockToProve.height > proof.prefix.head.height) {
+            // Fail if blockToProve is beyond the end of the suffix.
+            if (blockToProve.height > proof.suffix.head.height) {
+                return null;
+            }
+
+            let i = 0;
+            while (i < proof.suffix.length && proof.suffix.headers[i].height < blockToProve.height) i++;
+
+            // Since the suffix is dense, the block at suffix[i] should be the blockToProve.
+            // If it isn't, blockToProve is not part of the underlying chain.
+            if (!hashToProve.equals(await proof.suffix.headers[i].hash())) {
+                return null;
+            }
+
+            // Return a proof with a prefix consisting only of the blockToProve and the successors
+            // of blockToProve in the suffix.
+            const suffix = proof.suffix.headers.slice(i + 1);
+            const prefix = [blockToProve.toLight()];
+            return new ChainProof(new BlockChain(prefix), new HeaderChain(suffix));
+        }
+
+        // The block is (potentially) part of the prefix.
+        // Remove all prefix blocks that precede the blockToProve.
+        let i = 0;
+        while (i < proof.prefix.length && proof.prefix.blocks[i].height < blockToProve.height) i++;
+        const prefix = proof.prefix.blocks.slice(i);
+
+        // If the block is contained in the prefix, simply return a proof with the truncated prefix.
+        if (hashToProve.equals(await prefix[0].hash())) {
+            return new ChainProof(new BlockChain(prefix), proof.suffix);
+        }
+
+        // The block is not contained in the prefix, connect it to the tail block of the prefix.
+        // If this fails, blockToProve (or the given proof) is not on our main chain.
+        const blocks = await this._followDown(blockToProve, prefix[0]);
+        if (!blocks) {
+            return null;
+        }
+
+        // Prepend the connecting blocks to the prefix and return the resulting proof.
+        prefix.unshift(...blocks);
+        return new ChainProof(new BlockChain(prefix), proof.suffix);
+    }
+
+    /**
+     * @param {Block} blockToProve
+     * @param {Block} tailBlock
+     * @returns {Promise.<?Array.<Block>>}
+     * @private
+     */
+    async _followDown(blockToProve, tailBlock) {
+        const blocks = [];
+        const hashToProve = await blockToProve.hash();
+
+        const getReferenceIndex = (references, depth, block) => {
+            return Math.max(Math.min(depth - BlockUtils.getTargetDepth(block.target), references.length - 1), 0);
+        };
+
+        const tailTarget = BlockUtils.hashToTarget(await tailBlock.pow());
+        const tailDepth = BlockUtils.getTargetDepth(tailTarget);
+
+        const proveTarget = BlockUtils.hashToTarget(await blockToProve.pow());
+        const proveDepth = BlockUtils.getTargetDepth(proveTarget);
+
+        let depth = tailDepth;
+        let block = tailBlock;
+
+        let references = [block.prevHash, ...block.interlink.hashes.slice(1)];
+        let refIndex = getReferenceIndex(references, depth, block);
+        while (!hashToProve.equals(references[refIndex])) {
+            const nextBlock = await this.getBlock(references[refIndex]); // eslint-disable-line no-await-in-loop
+            if (!nextBlock) {
+                // This can happen in the light/nano client if the blockToProve is known but blocks between tailBlock
+                // and blockToProve are missing.
+                Log.w(BaseChain, `Failed to find block ${references[refIndex]} while constructing infix proof`);
+                return null;
+            }
+
+            if (nextBlock.height < blockToProve.height) {
+                // We have gone past the blockToProve, but are already at proveDepth, fail.
+                if (depth <= proveDepth) {
+                    return null;
+                }
+
+                // Decrease depth and thereby step size.
+                depth--;
+                refIndex = getReferenceIndex(references, depth, block);
+            } else if (nextBlock.height > blockToProve.height) {
+                // We are still in front of blockToProve, add block to result and advance.
+                blocks.unshift(nextBlock.toLight());
+
+                block = nextBlock;
+                references = [block.prevHash, ...block.interlink.hashes.slice(1)];
+                refIndex = getReferenceIndex(references, depth, block);
+            } else {
+                // We found a reference to a different block than blockToProve at its height.
+                Log.w(BaseChain, `Failed to prove block ${hashToProve} - different block ${references[refIndex]} at its height ${block.height}`);
+                return null;
+            }
+        }
+
+        // Include the blockToProve in the result.
+        blocks.unshift(blockToProve.toLight());
+
+        return blocks;
     }
 
 
