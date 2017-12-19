@@ -78,18 +78,52 @@ class BaseChain extends IBlockchain {
         return BlockUtils.getNextTarget(headData.head.header, tailData.head.header, deltaTotalDifficulty);
     }
 
+    /**
+     * @returns {Promise.<Array.<Hash>>}
+     */
+    async getBlockLocators() {
+        // Push top 10 hashes first, then back off exponentially.
+        /** @type {Array.<Hash>} */
+        const locators = [this.headHash];
+
+        let block = this.head;
+        for (let i = Math.min(10, this.height) - 1; i > 0; i--) {
+            if (!block) {
+                break;
+            }
+            locators.push(block.prevHash);
+            block = await this.getBlock(block.prevHash); // eslint-disable-line no-await-in-loop
+        }
+
+        let step = 2;
+        for (let i = this.height - 10 - step; i > 0; i -= step) {
+            block = await this.getBlockAt(i); // eslint-disable-line no-await-in-loop
+            if (block) {
+                locators.push(await block.hash()); // eslint-disable-line no-await-in-loop
+            }
+            step *= 2;
+        }
+
+        // Push the genesis block hash.
+        if (locators.length === 0 || !locators[locators.length - 1].equals(Block.GENESIS.HASH)) {
+            locators.push(Block.GENESIS.HASH);
+        }
+
+        return locators;
+    }
 
 
     /* NIPoPoW Prover functions */
 
     /**
+     * @param {number} height
      * @returns {Promise.<ChainProof>}
      * @protected
      */
-    async _getChainProof() {
+    async _getChainProof(height = this.height) {
         const snapshot = this._store.snapshot();
         const chain = new BaseChainSnapshot(snapshot, this.head);
-        const proof = await chain._prove(Policy.M, Policy.K, Policy.DELTA);
+        const proof = await chain._prove(Policy.M, Policy.K, Policy.DELTA, height);
         snapshot.abort();
         return proof;
     }
@@ -99,10 +133,11 @@ class BaseChain extends IBlockchain {
      * @param {number} m
      * @param {number} k
      * @param {number} delta
+     * @param {number} [height]
      * @returns {Promise.<ChainProof>}
      * @private
      */
-    async _prove(m, k, delta) {
+    async _prove(m, k, delta, height = this.height) {
         Assert.that(m >= 1, 'm must be >= 1');
         Assert.that(delta > 0, 'delta must be > 0');
         let prefix = new BlockChain([]);
@@ -110,7 +145,7 @@ class BaseChain extends IBlockchain {
         // B <- C[0]
         let startHeight = 1;
 
-        const head = await this.getBlockAt(Math.max(this.height - k, 1)); // C[-k]
+        const head = await this.getBlockAt(Math.max(height - k, 1)); // C[-k]
         const maxDepth = Math.max(BlockUtils.getTargetDepth(head.target) + head.interlink.length - 1, 0); // |C[-k].interlink|
         // for mu = |C[-k].interlink| down to 0 do
         for (let depth = maxDepth; depth >= 0; depth--) {
@@ -130,7 +165,8 @@ class BaseChain extends IBlockchain {
         }
 
         // X <- C[-k:]
-        const suffix = await this._getHeaderChain(this.height - head.height);
+        const suffixHead = await this.getBlockAt(height);
+        const suffix = await this._getHeaderChain(height - head.height, suffixHead);
 
         // return piX
         return new ChainProof(prefix, suffix);
@@ -269,7 +305,7 @@ class BaseChain extends IBlockchain {
         prefix.push(prefixHead);
 
         // Extract layered superchains from prefix. Make a copy because we are going to change the chains array.
-        const chains = (await proof.getSuperChains()).slice();
+        const chains = (await proof.prefix.getSuperChains()).slice();
 
         // Append new prefix head to chains.
         const target = BlockUtils.hashToTarget(await prefixHead.pow());
@@ -285,14 +321,38 @@ class BaseChain extends IBlockchain {
 
         // If the new header isn't a superblock, we're done.
         if (depth - BlockUtils.getTargetDepth(prefixHead.target) <= 0) {
-            return new ChainProof(new BlockChain(prefix), new HeaderChain(suffix), chains);
+            return new ChainProof(new BlockChain(prefix, chains), new HeaderChain(suffix));
         }
 
         // Prune unnecessary blocks if the chain is good.
         // Try to extend proof if the chain is bad.
+        const newPrefix = await this._pruneOrExtendPrefix(prefix, chains, depth, failOnBadness);
+        if (!newPrefix) {
+            return null;
+        }
+
+        // Return the extended proof.
+        return new ChainProof(newPrefix, new HeaderChain(suffix));
+    }
+
+    /**
+     * @param {Array.<Block>} prefixBlocks
+     * @param {Array.<BlockChain>} prefixChains
+     * @param {number} [depth]
+     * @param {boolean} [failOnBadness]
+     * @returns {Promise.<?BlockChain>}
+     * @private
+     */
+    async _pruneOrExtendPrefix(prefixBlocks, prefixChains, depth = -1, failOnBadness = true) {
+        Assert.that(prefixBlocks.length > 0);
+        if (depth < 0) {
+            const tailBlock = prefixBlocks[prefixBlocks.length - 1];
+            depth = Math.max(BlockUtils.getTargetDepth(tailBlock.target) + tailBlock.interlink.length - 1, 0);
+        }
+
         const deletedBlockHeights = new Set();
         for (let i = depth; i >= 0; i--) {
-            const superchain = chains[i];
+            const superchain = prefixChains[i];
             if (superchain.length < Policy.M) {
                 continue;
             }
@@ -310,7 +370,7 @@ class BaseChain extends IBlockchain {
             const referenceBlock = superchain.blocks[superchain.length - Policy.M];
             for (let j = i - 1; j >= 0; j--) {
                 let numBlocksToDelete = 0;
-                let candidateBlock = chains[j].blocks[numBlocksToDelete];
+                let candidateBlock = prefixChains[j].blocks[numBlocksToDelete];
                 while (candidateBlock.height <= referenceBlock.height) {
                     const candidateTarget = BlockUtils.hashToTarget(await candidateBlock.pow());
                     const candidateDepth = BlockUtils.getTargetDepth(candidateTarget);
@@ -319,21 +379,18 @@ class BaseChain extends IBlockchain {
                     }
 
                     numBlocksToDelete++;
-                    candidateBlock = chains[j].blocks[numBlocksToDelete];
+                    candidateBlock = prefixChains[j].blocks[numBlocksToDelete];
                 }
 
                 if (numBlocksToDelete > 0) {
                     // Don't modify the chain, create a copy.
-                    chains[j] = new BlockChain(chains[j].blocks.slice(numBlocksToDelete));
+                    prefixChains[j] = new BlockChain(prefixChains[j].blocks.slice(numBlocksToDelete));
                 }
             }
         }
 
         // Remove all deleted blocks from prefix.
-        const newPrefix = new BlockChain(prefix.filter(block => !deletedBlockHeights.has(block.height)));
-
-        // Return the extended proof.
-        return new ChainProof(newPrefix, new HeaderChain(suffix), chains);
+        return new BlockChain(prefixBlocks.filter(block => !deletedBlockHeights.has(block.height)), prefixChains);
     }
 
     /**
@@ -343,7 +400,7 @@ class BaseChain extends IBlockchain {
      * @protected
      */
     async _getInfixProof(blockToProve, proof) {
-        proof = proof || await this._getChainProof();
+        proof = proof || await this.getChainProof();
         const hashToProve = await blockToProve.hash();
 
         // Check whether the blockToProve is (potentially) part of the proof suffix.
@@ -373,7 +430,7 @@ class BaseChain extends IBlockchain {
         // Remove all prefix blocks that precede the blockToProve.
         let i = 0;
         while (i < proof.prefix.length && proof.prefix.blocks[i].height < blockToProve.height) i++;
-        const prefix = proof.prefix.blocks.slice(i);
+        let prefix = proof.prefix.blocks.slice(i);
 
         // If the block is contained in the prefix, simply return a proof with the truncated prefix.
         if (hashToProve.equals(await prefix[0].hash())) {
@@ -388,7 +445,7 @@ class BaseChain extends IBlockchain {
         }
 
         // Prepend the connecting blocks to the prefix and return the resulting proof.
-        prefix.unshift(...blocks);
+        prefix = blocks.concat(prefix);
         return new ChainProof(new BlockChain(prefix), proof.suffix);
     }
 
@@ -437,7 +494,7 @@ class BaseChain extends IBlockchain {
                 refIndex = getReferenceIndex(references, depth, block);
             } else if (nextBlock.height > blockToProve.height) {
                 // We are still in front of blockToProve, add block to result and advance.
-                blocks.unshift(nextBlock.toLight());
+                blocks.push(nextBlock.toLight());
 
                 block = nextBlock;
                 references = [block.prevHash, ...block.interlink.hashes.slice(1)];
@@ -450,9 +507,104 @@ class BaseChain extends IBlockchain {
         }
 
         // Include the blockToProve in the result.
-        blocks.unshift(blockToProve.toLight());
+        blocks.push(blockToProve.toLight());
 
-        return blocks;
+        return blocks.reverse();
+    }
+
+    /**
+     * @param {ChainProof} baseProof
+     * @param {ChainProof} infixProof
+     * @param {boolean} [failOnBadness]
+     * @returns {Promise.<?ChainProof>}
+     * @protected
+     */
+    async _joinChainProofs(baseProof, infixProof, failOnBadness = true) {
+        const infixTail = infixProof.tail;
+        const references = new HashSet();
+        references.addAll([infixTail.prevHash, infixTail.interlink.hashes.slice(1)]);
+
+        // Find the closest predecessor p of infixTail in baseProof.
+        // Scan the suffix first.
+        let index = -1;
+        for (let i = 0; i < baseProof.suffix.length; i++) {
+            const header = baseProof.suffix.headers[i];
+            if (header.height >= infixTail.height) {
+                break;
+            }
+
+            const hash = await header.hash();
+            if (references.contains(hash)) {
+                index = i;
+            }
+        }
+
+        /** @type {BlockChain} */
+        let prefix;
+
+        // If index >= 0, we found a predecessor of infixTail in the suffix.
+        if (index >= 0) {
+            // Turn the suffix headers up to p into light blocks by computing their interlinks.
+            // We assume that baseProof is verified and interlink hashes have been checked!
+            const suffixBlocks = [];
+            let head = baseProof.prefix.head;
+            for (let j = 0; j <= index; j++) {
+                const header = baseProof.suffix.headers[j];
+                const interlink = await head.getNextInterlink(header.target, header.version);
+                head = new Block(header, interlink);
+                suffixBlocks.push(head);
+            }
+
+            // Append the suffix blocks to the baseProof prefix. Copy it first.
+            prefix = baseProof.prefix.clone();
+            for (const suffixBlock of suffixBlocks) {
+                await prefix.append(suffixBlock);
+            }
+        }
+
+        // Otherwise, we didn't find a predecessor in the suffix, scan the prefix.
+        else {
+            for (let i = 0; i < baseProof.prefix.length; i++) {
+                const block = baseProof.prefix.blocks[i];
+                if (block.height >= infixTail.height) {
+                    break;
+                }
+
+                const hash = await block.hash();
+                if (references.contains(hash)) {
+                    index = i;
+                }
+            }
+
+            // If the infixTail is not found, the proofs cannot be joined, fail.
+            if (index < 0) {
+                return null;
+            }
+
+            // Cut off all blocks after the predecessor from the baseProof prefix.
+            prefix = baseProof.prefix.slice(0, index + 1);
+        }
+
+        // Append infixProof to new prefix. Also join superchains.
+        for (const block of infixProof.prefix.blocks) {
+            await prefix.append(block);
+        }
+
+        // Remove unnecessary blocks from proof.
+        console.time('getSuperChains');
+        const chains = await prefix.getSuperChains();
+        console.timeEnd('getSuperChains');
+
+        console.time('pruneOrExtend');
+        const newPrefix = await this._pruneOrExtendPrefix(prefix.blocks, chains, /*depth*/ -1, failOnBadness);
+        console.timeEnd('pruneOrExtend');
+
+        if (!newPrefix) {
+            return null;
+        }
+
+        // Return the joined proof.
+        return new ChainProof(newPrefix, infixProof.suffix);
     }
 
 

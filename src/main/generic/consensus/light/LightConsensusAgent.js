@@ -196,16 +196,17 @@ class LightConsensusAgent extends FullConsensusAgent {
     // Syncing stages.
     // Stage 1: Chain proof.
     /**
-     * @returns {void}
+     * @returns {Promise.<void>}
      * @private
      */
-    _requestChainProof() {
+    async _requestChainProof() {
         Assert.that(this._partialChain && this._partialChain.state === PartialLightChain.State.PROVE_CHAIN);
         Assert.that(!this._timers.timeoutExists('getChainProof'));
         this._busy = true;
 
         // Request ChainProof from peer.
-        this._peer.channel.getChainProof();
+        const locators = await this._blockchain.getBlockLocators();
+        this._peer.channel.getChainProof(locators);
 
         // Drop the peer if it doesn't send the chain proof within the timeout.
         // TODO should we ban here instead?

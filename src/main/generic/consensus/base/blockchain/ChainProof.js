@@ -2,9 +2,8 @@ class ChainProof {
     /**
      * @param {BlockChain} prefix
      * @param {HeaderChain} suffix
-     * @param {Array.<BlockChain>} [superChains]
      */
-    constructor(prefix, suffix, superChains) {
+    constructor(prefix, suffix) {
         if (!(prefix instanceof BlockChain) || !prefix.length) throw new Error('Malformed prefix');
         if (!(suffix instanceof HeaderChain)) throw new Error('Malformed suffix');
 
@@ -12,8 +11,6 @@ class ChainProof {
         this._prefix = prefix;
         /** @type {HeaderChain} */
         this._suffix = suffix;
-        /** @type {?Array.<BlockChain>} */
-        this._chains = superChains;
     }
 
     static unserialize(buf) {
@@ -35,15 +32,9 @@ class ChainProof {
     }
 
     /**
-     * @param {Hash} [anchorHash]
      * @returns {Promise.<boolean>}
      */
-    async verify(anchorHash = Block.GENESIS.HASH) {
-        // Check that the prefix chain is anchored.
-        if (!(await this._prefix.isAnchored(anchorHash))) {
-            return false;
-        }
-
+    async verify() {
         // Check that both prefix and suffix are valid chains.
         if (!(await this._prefix.verify()) || !(await this._suffix.verify())) {
             return false;
@@ -108,35 +99,6 @@ class ChainProof {
     }
 
     /**
-     * @returns {Promise.<Array.<BlockChain>>}
-     */
-    async getSuperChains() {
-        if (!this._chains) {
-            this._chains = [];
-            for (let i = 0; i < this._prefix.length; i++) {
-                const block = this._prefix.blocks[i];
-                const target = BlockUtils.hashToTarget(await block.pow());
-                const depth = BlockUtils.getTargetDepth(target);
-
-                if (this._chains[depth]) {
-                    this._chains[depth].blocks.push(block);
-                } else if (!this._chains[depth]) {
-                    this._chains[depth] = new BlockChain([block]);
-                }
-
-                for (let j = depth - 1; j >= 0; j--) {
-                    if (this._chains[j]) {
-                        this._chains[j].blocks.push(block);
-                    } else {
-                        this._chains[j] = new BlockChain([]);
-                    }
-                }
-            }
-        }
-        return this._chains;
-    }
-
-    /**
      * @returns {string}
      */
     toString() {
@@ -156,6 +118,11 @@ class ChainProof {
     /** @type {BlockHeader} */
     get head() {
         return this._suffix.length > 0 ? this._suffix.head : this._prefix.head.header;
+    }
+
+    /** @type {Block} */
+    get tail() {
+        return this._prefix.tail;
     }
 }
 Class.register(ChainProof);

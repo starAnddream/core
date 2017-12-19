@@ -60,13 +60,16 @@ class BlockChain {
 
     /**
      * @param {Array.<Block>} blocks
+     * @param {Array.<BlockChain>} [superChains]
      */
-    constructor(blocks) {
+    constructor(blocks, superChains) {
         if (!blocks || !NumberUtils.isUint16(blocks.length)
             || blocks.some(it => !(it instanceof Block) || !it.isLight())) throw new Error('Malformed blocks');
 
         /** @type {Array.<Block>} */
         this._blocks = blocks;
+        /** @type {Array.<BlockChain>} */
+        this._chains = superChains;
     }
 
     /**
@@ -154,11 +157,90 @@ class BlockChain {
     }
 
     /**
-     * @param {Hash} [hash]
-     * @returns {Promise.<boolean>}
+     * @returns {Promise.<Array.<BlockChain>>}
      */
-    async isAnchored(hash = Block.GENESIS.HASH) {
-        return hash.equals(await this.tail.hash());
+    async getSuperChains() {
+        if (!this._chains) {
+            this._chains = [];
+            for (let i = 0; i < this.length; i++) {
+                const block = this.blocks[i];
+                const target = BlockUtils.hashToTarget(await block.pow());
+                const depth = BlockUtils.getTargetDepth(target);
+
+                if (this._chains[depth]) {
+                    this._chains[depth].blocks.push(block);
+                } else {
+                    this._chains[depth] = new BlockChain([block]);
+                }
+
+                for (let j = depth - 1; j >= 0; j--) {
+                    if (this._chains[j]) {
+                        this._chains[j].blocks.push(block);
+                    } else {
+                        this._chains[j] = new BlockChain([]);
+                    }
+                }
+            }
+        }
+        return this._chains;
+    }
+
+    /**
+     * @param {Block} block
+     * @returns {Promise.<void>}
+     */
+    async append(block) {
+        Assert.that(block.isLight());
+        this._blocks.push(block);
+
+        if (!this._chains) {
+            return;
+        }
+
+        const target = BlockUtils.hashToTarget(await block.pow());
+        const depth = BlockUtils.getTargetDepth(target);
+        for (let i = depth; i >= 0; i--) {
+            if (!this._chains[i]) {
+                this._chains[i] = new BlockChain([block]);
+            } else {
+                this._chains[i].blocks.push(block);
+            }
+        }
+    }
+
+    /**
+     * @param {number} start
+     * @param {number} end
+     * @returns {BlockChain}
+     */
+    slice(start, end) {
+        const blocks = this._blocks.slice(start, end);
+
+        if (!this._chains) {
+            return new BlockChain(blocks);
+        }
+
+        const chains = [];
+        const startHeight = this.tail.height;
+        const endHeight = this.head.height;
+        for (const chain of this._chains) {
+            const filtered = chain.blocks.filter(b => b.height >= startHeight && b.height <= endHeight);
+            chains.push(new BlockChain(filtered));
+        }
+
+        return new BlockChain(blocks, chains);
+    }
+
+    /**
+     * @returns {BlockChain}
+     */
+    clone() {
+        const blocks = this._blocks.slice();
+        let chains = null;
+        if (this._chains) {
+            chains = this._chains.map(chain => chain.clone());
+        }
+        return new BlockChain(blocks, chains);
     }
 
     /**

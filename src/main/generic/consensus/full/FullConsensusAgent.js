@@ -122,37 +122,12 @@ class FullConsensusAgent extends BaseConsensusAgent {
         const onFork = this._forkHead && this._numBlocksExtending === 0 && this._numBlocksForking > 0;
 
         /** @type {Array.<Hash>} */
-        const locators = [];
+        let locators;
         if (onFork) {
             // Only send the fork head as locator if the peer is sending us a fork.
-            locators.push(await this._forkHead.hash());
+            locators = [await this._forkHead.hash()];
         } else {
-            // Request blocks starting from our hardest chain head going back to
-            // the genesis block. Push top 10 hashes first, then back off exponentially.
-            locators.push(this._blockchain.headHash);
-
-            let block = this._blockchain.head;
-            for (let i = Math.min(10, this._blockchain.height) - 1; i > 0; i--) {
-                if (!block) {
-                    break;
-                }
-                locators.push(block.prevHash);
-                block = await this._blockchain.getBlock(block.prevHash); // eslint-disable-line no-await-in-loop
-            }
-
-            let step = 2;
-            for (let i = this._blockchain.height - 10 - step; i > 0; i -= step) {
-                block = await this._blockchain.getBlockAt(i); // eslint-disable-line no-await-in-loop
-                if (block) {
-                    locators.push(await block.hash()); // eslint-disable-line no-await-in-loop
-                }
-                step *= 2;
-            }
-
-            // Push the genesis block hash.
-            if (locators.length === 0 || !locators[locators.length - 1].equals(Block.GENESIS.HASH)) {
-                locators.push(Block.GENESIS.HASH);
-            }
+            locators = await this._blockchain.getBlockLocators();
         }
 
         // Reset block counters.
@@ -420,7 +395,25 @@ class FullConsensusAgent extends BaseConsensusAgent {
      * @private
      */
     async _onGetChainProof(msg) {
-        const proof = await this._blockchain.getChainProof();
+        let proof;
+
+        // XXX Detect whether the peer wants an infix proof or a full chain proof.
+        // FIXME Remove after next hardfork.
+        if (msg.locators) {
+            let blockToProve = Block.GENESIS;
+            for (const locator of msg.locators) {
+                const block = await this._blockchain.getBlock(locator);
+                if (block) {
+                    // We found a block, ignore remaining block locator hashes.
+                    blockToProve = block;
+                    break;
+                }
+            }
+            proof = await this._blockchain.getInfixProof(blockToProve);
+        } else {
+            proof = await this._blockchain.getChainProof();
+        }
+
         this._peer.channel.chainProof(proof);
     }
 

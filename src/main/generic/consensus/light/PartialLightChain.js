@@ -39,6 +39,15 @@ class PartialLightChain extends LightChain {
      * @private
      */
     async _pushProof(proof) {
+        // Check that we know the proof's tail block and that it is on our main chain.
+        const tailHash = await proof.tail.hash();
+        const tailBlock = await this.getBlock(tailHash);
+        if (!tailBlock) {
+            Log.w(PartialLightChain, 'Rejecting proof - tail block unknown or not on main chain');
+            return false;
+        }
+
+        // Batch-compute PoW hashes for all blocks that we don't know yet.
         const toDo = [];
         for (let i = 0; i < proof.prefix.length; ++i) {
             const block = proof.prefix.blocks[i];
@@ -111,8 +120,16 @@ class PartialLightChain extends LightChain {
             suffixBlocks.push(head);
         }
 
-        // If the given proof is better than our current proof, adopt the given proof as the new best proof.
+        // If the given proof is an infix proof (i.e. it doesn't start at the genesis block), extend it to a full proof.
         const currentProof = await this.getChainProof();
+        if (!Block.GENESIS.HASH.equals(tailHash)) {
+            proof = await this._joinChainProofs(currentProof, proof);
+            if (!proof) {
+                Log.w(PartialLightChain, `Failed to join base proof ${currentProof} with infix proof ${proof}`);
+            }
+        }
+
+        // If the given proof is better than our current proof, adopt the given proof as the new best proof.
         if (await BaseChain.isBetterProof(proof, currentProof, Policy.M)) {
             await this._acceptProof(proof, suffixBlocks);
         } else {
