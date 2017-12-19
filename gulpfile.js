@@ -16,6 +16,7 @@ const sources = {
     platform: {
         browser: [
             './src/main/platform/browser/Class.js',
+            './src/main/platform/browser/consensus/base/blockchain/ChainDataStoreCodec.js',
             './src/main/platform/browser/utils/LogNative.js',
             './src/main/generic/utils/Log.js',
             './src/main/generic/utils/Observable.js',
@@ -29,6 +30,7 @@ const sources = {
             './src/main/platform/browser/network/websocket/WebSocketConnector.js'
         ],
         node: [
+            './src/main/platform/nodejs/consensus/base/blockchain/ChainDataStoreCodec.js',
             './src/main/platform/nodejs/utils/LogNative.js',
             './src/main/generic/utils/Log.js',
             './src/main/generic/utils/Observable.js',

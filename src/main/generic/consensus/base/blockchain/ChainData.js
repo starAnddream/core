@@ -41,6 +41,39 @@ class ChainData {
         };
     }
 
+    /**
+     * @param {SerialBuffer} buf
+     * @returns {ChainData}
+     */
+    static unserialize(buf) {
+        const head = Block.unserialize(buf);
+        const totalDifficulty = buf.readFloat64();
+        const totalWork = buf.readFloat64();
+        const onMainChain = buf.readUint8();
+        return new ChainData(head, totalDifficulty, totalWork, onMainChain !== 0);
+    }
+
+    /**
+     * @param {SerialBuffer} [buf]
+     * @returns {SerialBuffer}
+     */
+    serialize(buf) {
+        buf = buf || new SerialBuffer(this.serializedSize);
+        this._head.serialize(buf);
+        buf.writeFloat64(this._totalDifficulty);
+        buf.writeFloat64(this._totalWork);
+        buf.writeUint8(this._onMainChain ? 1 : 0);
+        return buf;
+    }
+
+    /** @type {number} */
+    get serializedSize() {
+        return this._head.serializedSize
+            + /*totalDifficulty*/ 8
+            + /*totalWork*/ 8
+            + /*onMainChain*/ 1;
+    }
+
     /** @type {Block} */
     get head() {
         return this._head;
