@@ -45,7 +45,7 @@ class WebSocketConnector extends Observable {
             this._timers.clearTimeout(timeoutKey);
 
             const netAddress = NetAddress.fromIP(ws._socket.remoteAddress);
-            const conn = new PeerConnection(ws, Protocol.WS, netAddress, peerAddress);
+            const conn = new PeerConnection(new WebSocketDataChannel(ws), Protocol.WS, netAddress, peerAddress);
             this.fire('connection', conn);
         };
         ws.onerror = e => {
