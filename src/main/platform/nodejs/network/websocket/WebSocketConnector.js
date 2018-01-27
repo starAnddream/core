@@ -12,6 +12,14 @@ class WebSocketConnector extends Observable {
      */
     constructor(netconfig) {
         super();
+
+        this._timers = new Timers();
+
+        // XXX Disable WebSocket server if we're not a WS peer.
+        if (netconfig.peerAddress.protocol !== Protocol.WS) {
+            return;
+        }
+
         const port = netconfig.peerAddress.port;
         const sslConfig = netconfig.sslConfig;
 
@@ -27,8 +35,6 @@ class WebSocketConnector extends Observable {
 
         this._wss = new WebSocket.Server({server: httpsServer});
         this._wss.on('connection', ws => this._onConnection(ws));
-
-        this._timers = new Timers();
 
         Log.d(WebSocketConnector, `WebSocketConnector listening on port ${port}`);
     }

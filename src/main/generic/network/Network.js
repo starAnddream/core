@@ -585,6 +585,11 @@ class Network extends Observable {
         return this._time;
     }
 
+    /** @type {NetworkConfig} */
+    get config() {
+        return this._netconfig;
+    }
+
     /** @type {number} */
     get peerCount() {
         return this._addresses.peerCount;

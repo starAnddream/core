@@ -144,7 +144,7 @@ class PeerConnector extends Observable {
 
         this._nonce = NumberUtils.randomUint32();
 
-        this._rtcConnection = new RTCPeerConnection(this._netconfig.webRtcConfig);
+        this._rtcConnection = WebRtcFactory.newPeerConnection(this._netconfig.webRtcConfig);
         this._rtcConnection.onicecandidate = e => this._onIceCandidate(e);
 
         this._lastIceCandidate = null;
@@ -153,7 +153,7 @@ class PeerConnector extends Observable {
 
     onSignal(signal) {
         if (signal.sdp) {
-            this._rtcConnection.setRemoteDescription(new RTCSessionDescription(signal))
+            this._rtcConnection.setRemoteDescription(WebRtcFactory.newSessionDescription(signal))
                 .then(() => {
                     if (signal.type === 'offer') {
                         this._rtcConnection.createAnswer()
@@ -175,7 +175,7 @@ class PeerConnector extends Observable {
      * @private
      */
     _addIceCandidate(signal) {
-        this._lastIceCandidate = new RTCIceCandidate(signal);
+        this._lastIceCandidate = WebRtcFactory.newIceCandidate(signal);
 
         // Do not try to add ICE candidates before the remote description is set.
         if (!this._rtcConnection.remoteDescription || !this._rtcConnection.remoteDescription.type) {
@@ -267,7 +267,10 @@ class OutboundPeerConnector extends PeerConnector {
         // Create offer.
         const channel = this._rtcConnection.createDataChannel('data-channel');
         channel.binaryType = 'arraybuffer';
-        channel.onopen = e => this._onDataChannel(e);
+        channel.onopen = e => {
+            e.channel = e.channel || channel;
+            this._onDataChannel(e);
+        };
         this._rtcConnection.createOffer()
             .then(description => this._onDescription(description))
             .catch(error => this._errorLog(error));
@@ -279,7 +282,10 @@ class InboundPeerConnector extends PeerConnector {
     constructor(netconfig, signalChannel, signalId, offer) {
         super(netconfig, signalChannel, signalId, null);
         this._rtcConnection.ondatachannel = event => {
-            event.channel.onopen = e => this._onDataChannel(e);
+            event.channel.onopen = e => {
+                e.channel = e.channel || event.channel || event.target;
+                this._onDataChannel(e);
+            };
         };
         this.onSignal(offer);
     }

@@ -3,7 +3,7 @@ const argv = require('minimist')(process.argv.slice(2));
 
 if (!argv.host || !argv.port || !argv.key || !argv.cert) {
     console.log('Usage: node index.js --host=<hostname> --port=<port> --key=<ssl-key> --cert=<ssl-cert> [--wallet-seed=<wallet-seed>] [--wallet-address=<address>] [--miner[=<thread-num>[:<throttle-after>[:<throttle-wait>]]]] [--statistics[=<interval>]] [--passive] [--log=LEVEL] [--log-tag=TAG[:LEVEL]]');
-    process.exit();
+    //process.exit();
 }
 
 const host = argv.host;
@@ -41,13 +41,15 @@ const TAG = 'Node';
 const $ = {};
 
 (async () => {
-    const netconfig = Nimiq.NetworkConfig.getPlatformDefault(host, port, key, cert);
-    $.consensus = await Nimiq.Consensus.full(netconfig);
+    //const netconfig = Nimiq.NetworkConfig.getPlatformDefault(host, port, key, cert);
+    $.consensus = await Nimiq.Consensus.full();
 
     $.blockchain = $.consensus.blockchain;
     $.accounts = $.blockchain.accounts;
     $.mempool = $.consensus.mempool;
     $.network = $.consensus.network;
+
+    Nimiq.Log.i(TAG, `Peer Address: ${$.network.config.peerAddress}`);
 
     if (!walletAddress) {
         $.wallet = walletSeed ? await Nimiq.Wallet.load(walletSeed) : await Nimiq.Wallet.getPersistent();

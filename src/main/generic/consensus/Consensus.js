@@ -7,7 +7,7 @@ class Consensus {
         await Crypto.prepareSyncCryptoWorker();
 
         /** @type {NetworkConfig} */
-        netconfig = netconfig || await NetworkConfig.getPlatformDefault();
+        netconfig = netconfig || await NetworkConfig.getDefault();
 
         /** @type {Time} */
         const time = new Time();
@@ -39,7 +39,7 @@ class Consensus {
         await Crypto.prepareSyncCryptoWorker();
 
         /** @type {NetworkConfig} */
-        netconfig = netconfig || await NetworkConfig.getPlatformDefault();
+        netconfig = netconfig || await NetworkConfig.getDefault();
 
         /** @type {Time} */
         const time = new Time();
@@ -71,7 +71,7 @@ class Consensus {
         await Crypto.prepareSyncCryptoWorker();
 
         /** @type {NetworkConfig} */
-        netconfig = netconfig || await NetworkConfig.getPlatformDefault();
+        netconfig = netconfig || await NetworkConfig.getDefault();
 
         /** @type {Time} */
         const time = new Time();

@@ -10,6 +10,7 @@
 /clients/nodejs/light-consensus
 /clients/nodejs/wallet
 /clients/nodejs/localhost.*
+clients/nodejs/webrtc
 /dist/nimiq*
 /dist/worker.js*
 /dist/web*

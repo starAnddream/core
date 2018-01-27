@@ -1,8 +1,6 @@
 class WebRtcDataChannel extends Observable {
     constructor(nativeChannel) {
         super();
-        // We expect WebRtc data channels to be ordered.
-        Assert.that(nativeChannel.ordered, 'WebRtc data channel not ordered');
         this._channel = nativeChannel;
 
         this._channel.onmessage = msg => this._onMessage(msg.data || msg);
@@ -19,7 +17,7 @@ class WebRtcDataChannel extends Observable {
     _onMessage(msg) {
         // XXX Convert Blob to ArrayBuffer if necessary.
         // TODO FileReader is slow and this is ugly anyways. Improve!
-        if (msg instanceof Blob) {
+        if (PlatformUtils.isBrowser() && msg instanceof Blob) {
             const reader = new FileReader();
             reader.onloadend = () => this._onMessage(reader.result);
             reader.readAsArrayBuffer(msg);

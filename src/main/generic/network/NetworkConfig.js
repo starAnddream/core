@@ -1,17 +1,9 @@
 class NetworkConfig {
     /**
-     * @param {string} [host]
-     * @param {number} [port]
-     * @param {string} [key]
-     * @param {string} [cert]
-     * @returns {WebSocketConfig|Promise.<WebRtcConfig>}
+     * @returns {Promise.<NetworkConfig>}
      */
-    static getPlatformDefault(host, port, key, cert) {
-        if (PlatformUtils.isNodeJs() && host && port && key && cert) {
-            return new WebSocketConfig(host, port, key, cert);
-        } else {
-            return new WebRtcConfig();
-        }
+    static getDefault() {
+        return new WebRtcConfig();
     }
 
     /**
@@ -127,6 +119,7 @@ Class.register(WebSocketConfig);
 class WebRtcConfig extends NetworkConfig {
     /**
      * @constructor
+     * @returns {Promise.<WebRtcConfig>}
      */
     constructor() {
         super(Protocol.WS | Protocol.RTC);
@@ -135,7 +128,7 @@ class WebRtcConfig extends NetworkConfig {
     }
 
     /**
-     * @return {NetworkConfig}
+     * @returns {Promise.<WebRtcConfig>}
      */
     async _init() {
         const db = await new WebRtcStore();
