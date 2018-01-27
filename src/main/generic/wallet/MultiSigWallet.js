@@ -29,13 +29,13 @@ class MultiSigWallet {
         this._publicKeys = publicKeys;
         this._publicKeys.sort((a, b) => a.compare(b));
         /** @type {Address} */
-        this._address = undefined;
+        this._blockHash = undefined;
         return this._init();
     }
 
     async _init() {
         const merkleRoot = await MerkleTree.computeRoot(this._publicKeys);
-        this._address = Address.fromHash(merkleRoot);
+        this._blockHash = Address.fromHash(merkleRoot);
         return this;
     }
 
@@ -48,7 +48,7 @@ class MultiSigWallet {
      * @returns {Transaction} A prepared Transaction object.
      */
     async createTransaction(recipientAddr, value, fee, validityStartHeight) {
-        const transaction = new ExtendedTransaction(this._address, Account.Type.BASIC,
+        const transaction = new ExtendedTransaction(this._blockHash, Account.Type.BASIC,
             recipientAddr, Account.Type.BASIC, value, fee, validityStartHeight, new Uint8Array(0));
         return transaction;
     }
@@ -96,7 +96,7 @@ class MultiSigWallet {
      * @type {Address}
      */
     get address() {
-        return this._address;
+        return this._blockHash;
     }
 
     /** @type {KeyPair} */

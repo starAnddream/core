@@ -29,6 +29,15 @@ class BaseChain extends IBlockchain {
     }
 
     /**
+     * @param {number} height
+     * @param {boolean} [lower]
+     * @returns {Promise.<?Block>}
+     */
+    getNearestBlockAt(height, lower=true) {
+        return this._store.getNearestBlockAt(height, lower) || null;
+    }
+
+    /**
      * Computes the target value for the block after the given block or the head of this chain if no block is given.
      * @param {Block} [block]
      * @returns {Promise.<number>}
@@ -453,7 +462,7 @@ class BaseChain extends IBlockchain {
      * @param {Block} blockToProve
      * @param {Block} tailBlock
      * @returns {Promise.<?Array.<Block>>}
-     * @private
+     * @protected
      */
     async _followDown(blockToProve, tailBlock) {
         const blocks = [];

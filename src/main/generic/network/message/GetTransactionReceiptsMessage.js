@@ -6,7 +6,7 @@ class GetTransactionReceiptsMessage extends Message {
         super(Message.Type.GET_TRANSACTION_RECEIPTS);
         if (!(address instanceof Address)) throw new Error('Malformed address');
         /** @type {Address} */
-        this._address = address;
+        this._blockHash = address;
     }
 
     /**
@@ -26,7 +26,7 @@ class GetTransactionReceiptsMessage extends Message {
     serialize(buf) {
         buf = buf || new SerialBuffer(this.serializedSize);
         super.serialize(buf);
-        this._address.serialize(buf);
+        this._blockHash.serialize(buf);
         super._setChecksum(buf);
         return buf;
     }
@@ -34,12 +34,12 @@ class GetTransactionReceiptsMessage extends Message {
     /** @type {number} */
     get serializedSize() {
         return super.serializedSize
-            + this._address.serializedSize;
+            + this._blockHash.serializedSize;
     }
 
     /** @type {Address} */
     get address() {
-        return this._address;
+        return this._blockHash;
     }
 }
 Class.register(GetTransactionReceiptsMessage);

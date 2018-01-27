@@ -318,6 +318,23 @@ class PeerChannel extends Observable {
     }
 
     /**
+     * @param {Hash} blockHashToProve
+     * @param {Hash} knownBlockHash
+     * @returns {boolean}
+     */
+    getBlockProof(blockHashToProve, knownBlockHash) {
+        return this._send(new GetBlockProofMessage(blockHashToProve, knownBlockHash));
+    }
+
+    /**
+     * @param {BlockChain} [proof]
+     * @returns {boolean}
+     */
+    blockProof(proof) {
+        return this._send(new BlockProofMessage(proof));
+    }
+
+    /**
      * @param {PeerChannel} o
      * @return {boolean}
      */
@@ -407,3 +424,5 @@ PeerChannel.Event[Message.Type.GET_TRANSACTIONS_PROOF] = 'get-transactions-proof
 PeerChannel.Event[Message.Type.TRANSACTIONS_PROOF] = 'transactions-proof';
 PeerChannel.Event[Message.Type.GET_TRANSACTION_RECEIPTS] = 'get-transaction-receipts';
 PeerChannel.Event[Message.Type.TRANSACTION_RECEIPTS] = 'transaction-receipts';
+PeerChannel.Event[Message.Type.GET_BLOCK_PROOF] = 'get-block-proof';
+PeerChannel.Event[Message.Type.BLOCK_PROOF] = 'block-proof';

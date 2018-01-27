@@ -68,8 +68,8 @@ class Wallet {
         /** @type {KeyPair} */
         this._keyPair = keyPair;
         /** @type {Address} */
-        this._address = undefined;
-        this._address = this._keyPair.publicKey.toAddressSync();
+        this._blockHash = undefined;
+        this._blockHash = this._keyPair.publicKey.toAddressSync();
     }
 
     /**
@@ -163,7 +163,7 @@ class Wallet {
      * @type {Address}
      */
     get address() {
-        return this._address;
+        return this._blockHash;
     }
 
     /**

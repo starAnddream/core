@@ -153,6 +153,8 @@ const sources = {
         './src/main/generic/network/message/GetTransactionsProofMessage.js',
         './src/main/generic/network/message/GetTransactionReceiptsMessage.js',
         './src/main/generic/network/message/TransactionReceiptsMessage.js',
+        './src/main/generic/network/message/GetBlockProofMessage.js',
+        './src/main/generic/network/message/BlockProofMessage.js',
         './src/main/generic/network/message/MessageFactory.js',
         './src/main/generic/network/NetworkAgent.js',
         './src/main/generic/network/Network.js',
